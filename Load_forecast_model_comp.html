@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.4.554">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Load Forecast</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="Load_forecast_model_comp_files/libs/clipboard/clipboard.min.js"></script>
+<script src="Load_forecast_model_comp_files/libs/quarto-html/quarto.js"></script>
+<script src="Load_forecast_model_comp_files/libs/quarto-html/popper.min.js"></script>
+<script src="Load_forecast_model_comp_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="Load_forecast_model_comp_files/libs/quarto-html/anchor.min.js"></script>
+<link href="Load_forecast_model_comp_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="Load_forecast_model_comp_files/libs/quarto-html/quarto-syntax-highlighting.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="Load_forecast_model_comp_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="Load_forecast_model_comp_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="Load_forecast_model_comp_files/libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="light">
+
+
+</head>
+
+<body class="fullcontent">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Load Forecast</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<section id="introduction" class="level2">
+<h2 class="anchored" data-anchor-id="introduction">Introduction</h2>
+<p>Hello world, this is just a simple comparison between the predictive methods for forecasting PJM load for the next day. In this we use the load data from PJM’s data finder as well as the weather forecast from John Glenn international airport via NOAA. Below are links to the data as well as the pulled data is in the git repo.</p>
+<p><a href="https://dataminer2.pjm.com/feed/inst_load">PJM Data</a></p>
+<p><a href="https://data.noaa.gov/onestop/collections/details666b9db2-e598-4d5a-9240-c4c10fc3c7a6">NOAA</a></p>
+<div id="cc7c93bb" class="cell" data-execution_count="1">
+<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># loads the packages to be used</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> tensorflow <span class="im">as</span> tf</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> keras</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> random</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.linear_model <span class="im">import</span> LinearRegression</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="im">from</span>  sklearn.preprocessing <span class="im">import</span> StandardScaler</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sklearn.ensemble <span class="im">import</span> RandomForestRegressor</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> statsmodels.api <span class="im">as</span> sm</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> scipy.stats <span class="im">import</span> shapiro </span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> statistics</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> os</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> datetime <span class="im">import</span> datetime</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> seaborn <span class="im">as</span> sb</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> matplotlib <span class="im">import</span> pyplot <span class="im">as</span> plt</span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> statsmodels.graphics.tsaplots <span class="im">import</span> plot_pacf, plot_acf</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div id="7d2a03ed" class="cell" data-execution_count="2">
+<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Changes directory to the project directory and loads the data</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>os.chdir(<span class="st">"C:\Projects\pjm_load_forecast"</span>)</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>cwd <span class="op">=</span> os.getcwd()</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="co">#Filters weather to past year and sets to date to datetime</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>weather_data <span class="op">=</span> pd.read_csv(<span class="st">"data\johnglenn_weather.csv"</span>)</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>weather_data <span class="op">=</span> weather_data[weather_data[<span class="st">"Date"</span>] <span class="op">&gt;=</span> <span class="st">"2023-05-01"</span>]</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>weather_data[<span class="st">'Date'</span>] <span class="op">=</span> pd.to_datetime(weather_data[<span class="st">'Date'</span>], <span class="bu">format</span> <span class="op">=</span> <span class="st">"%Y-%m-</span><span class="sc">%d</span><span class="st">"</span>)</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="co">#Filters the data to just PJM RTO and then gets daily values from hourly load</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>pjm_rto_load <span class="op">=</span> pd.read_csv(<span class="st">"data\hrl_load_prelim.csv"</span>)</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>pjm_rto_load[<span class="st">'datetime_beginning_ept'</span>] <span class="op">=</span> pd.to_datetime(pjm_rto_load[<span class="st">'datetime_beginning_ept'</span>])</span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="co"># Makes the datetime a date and hourly load numeric</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>pjm_rto_load[<span class="st">'date'</span>] <span class="op">=</span> pjm_rto_load[<span class="st">'datetime_beginning_ept'</span>].dt.date</span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>pjm_rto_load[<span class="st">'date'</span>] <span class="op">=</span> pd.to_datetime(pjm_rto_load[<span class="st">'date'</span>])</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>pjm_rto_load[<span class="st">'load_hourly'</span>] <span class="op">=</span> pd.to_numeric(pjm_rto_load[<span class="st">'prelim_load_avg_hourly'</span>])</span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a><span class="co">#Gets the sum for load in a day across all regions and hours in the day</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>pjm_rto_load_day <span class="op">=</span> pjm_rto_load[[<span class="st">'date'</span>, <span class="st">'load_hourly'</span>]].groupby(<span class="st">'date'</span>).agg(day_load <span class="op">=</span> (<span class="st">'load_hourly'</span>,<span class="st">'sum'</span>)).reset_index()</span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a><span class="co">#Joins datasets together</span></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>pjm_data <span class="op">=</span> pjm_rto_load_day.merge(weather_data, left_on<span class="op">=</span><span class="st">'date'</span>, right_on<span class="op">=</span><span class="st">'Date'</span>)[[<span class="st">'date'</span>, <span class="st">'day_load'</span>, <span class="st">'TAVG (Degrees Fahrenheit)'</span>]]</span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a><span class="co">#Gets a season variable</span></span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>pjm_data[<span class="st">'month'</span>] <span class="op">=</span> pd.DatetimeIndex(pjm_data[<span class="st">'date'</span>]).month</span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>pjm_data[<span class="st">'season'</span>] <span class="op">=</span> np.where(pjm_data[<span class="st">'month'</span>].isin([<span class="dv">12</span>,<span class="dv">1</span>,<span class="dv">2</span>]), <span class="st">"Winter"</span>, np.where(pjm_data[<span class="st">'month'</span>].isin([<span class="dv">3</span>,<span class="dv">4</span>,<span class="dv">5</span>]), <span class="st">"Spring"</span>, np.where(pjm_data[<span class="st">'month'</span>].isin([<span class="dv">6</span>,<span class="dv">7</span>,<span class="dv">8</span>]), <span class="st">"Summer"</span>,<span class="st">"Fall"</span>)))</span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a><span class="co">#Deletes the past data sets</span></span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a><span class="kw">del</span> pjm_rto_load_day</span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a><span class="kw">del</span> weather_data</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>&lt;&gt;:2: SyntaxWarning: invalid escape sequence '\P'
+&lt;&gt;:6: SyntaxWarning: invalid escape sequence '\j'
+&lt;&gt;:11: SyntaxWarning: invalid escape sequence '\h'
+&lt;&gt;:2: SyntaxWarning: invalid escape sequence '\P'
+&lt;&gt;:6: SyntaxWarning: invalid escape sequence '\j'
+&lt;&gt;:11: SyntaxWarning: invalid escape sequence '\h'
+C:\Users\jkdav\AppData\Local\Temp\ipykernel_31572\1686998316.py:2: SyntaxWarning: invalid escape sequence '\P'
+  os.chdir("C:\Projects\pjm_load_forecast")
+C:\Users\jkdav\AppData\Local\Temp\ipykernel_31572\1686998316.py:6: SyntaxWarning: invalid escape sequence '\j'
+  weather_data = pd.read_csv("data\johnglenn_weather.csv")
+C:\Users\jkdav\AppData\Local\Temp\ipykernel_31572\1686998316.py:11: SyntaxWarning: invalid escape sequence '\h'
+  pjm_rto_load = pd.read_csv("data\hrl_load_prelim.csv")
+C:\Users\jkdav\AppData\Local\Temp\ipykernel_31572\1686998316.py:12: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
+  pjm_rto_load['datetime_beginning_ept'] = pd.to_datetime(pjm_rto_load['datetime_beginning_ept'])</code></pre>
+</div>
+</div>
+</section>
+<section id="eda" class="level2">
+<h2 class="anchored" data-anchor-id="eda">EDA</h2>
+<p>In the EDA we can see that there were no missing data. When looking at the desnisties of temperature and load we can see they are multi modal suggesting multiple populations. However when looking at the months we can see this is season driven. Furthermore when looking at the data we can see that temperature and load have a clear relationship between the two.</p>
+<div id="704a4eaa" class="cell" data-execution_count="3">
+<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>missing_vals <span class="op">=</span> pjm_data[<span class="st">'TAVG (Degrees Fahrenheit)'</span>].isna().<span class="bu">sum</span>()</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Number of NAs in Degrees of weather :"</span>, missing_vals)</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>sb.kdeplot(pjm_data[<span class="st">'TAVG (Degrees Fahrenheit)'</span>])</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>sb.kdeplot(data <span class="op">=</span> pjm_data, x <span class="op">=</span> <span class="st">'TAVG (Degrees Fahrenheit)'</span>, hue<span class="op">=</span><span class="st">"season"</span>)</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>sb.lineplot(data<span class="op">=</span>pjm_data, x<span class="op">=</span><span class="st">"date"</span>, y<span class="op">=</span><span class="st">'TAVG (Degrees Fahrenheit)'</span>)</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>missing_vals <span class="op">=</span> pjm_data[<span class="st">'day_load'</span>].isna().<span class="bu">sum</span>()</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Number of NAs in Day Load :"</span>, missing_vals)</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>sb.kdeplot(pjm_data[<span class="st">'day_load'</span>])</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>sb.kdeplot(data <span class="op">=</span> pjm_data, x <span class="op">=</span> <span class="st">'day_load'</span>, hue<span class="op">=</span><span class="st">"season"</span>)</span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>sb.lineplot(data<span class="op">=</span>pjm_data, x<span class="op">=</span><span class="st">"date"</span>, y<span class="op">=</span><span class="st">'day_load'</span>)</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>sb.pairplot(pjm_data.drop(columns <span class="op">=</span> [<span class="st">'month'</span>]), diag_kind<span class="op">=</span><span class="st">'kde'</span>)</span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>plt.show()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Number of NAs in Degrees of weather : 0
+Number of NAs in Day Load : 0</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Load_forecast_model_comp_files/figure-html/cell-4-output-2.png" width="609" height="429" class="figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Load_forecast_model_comp_files/figure-html/cell-4-output-3.png" width="626" height="429" class="figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-error">
+<pre><code>ValueError: Date ordinal 3329349.1745320703 converts to 11085-06-13T04:11:19.570880 (using epoch 1970-01-01T00:00:00), but Matplotlib dates must be between year 0001 and 9999.</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>&lt;Figure size 672x480 with 1 Axes&gt;</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Load_forecast_model_comp_files/figure-html/cell-4-output-6.png" width="582" height="443" class="figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Load_forecast_model_comp_files/figure-html/cell-4-output-7.png" width="589" height="443" class="figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Load_forecast_model_comp_files/figure-html/cell-4-output-8.png" width="476" height="476" class="figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="time-series" class="level2">
+<h2 class="anchored" data-anchor-id="time-series">Time Series</h2>
+<p>For the first model we look at making an model based on time. First we have to look time element with ACF and PACF to see what ARMIA elements we have. Because we are only using one year, we won’t be doing any seasonilty or monthly differenceing.</p>
+<p>When looking at at the ACF and PACF we see that the PACF has the first two lags have a strong relationship, while the ACF has a gradual decline. With this we will consider the first two lags or AR(2) variables.</p>
+<p>Additionally we create new variables heating degree days and cooling degree days. These variables are ways to help determine the when a day would be used for heating or cooling based upon the temperature. As well as getting weekend dates as load will changes then typical work week days.</p>
+<p>Lastly we create the test set, in which as we are trying to forecast the next day, we use the last 7 days of each season to create the test set.</p>
+<div id="900806fc" class="cell" data-execution_count="4">
+<div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Look at autocorrelations</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>plot_acf(pjm_data[<span class="st">'day_load'</span>], lags<span class="op">=</span><span class="dv">50</span>)</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>plot_pacf(pjm_data[<span class="st">'day_load'</span>], lags<span class="op">=</span><span class="dv">50</span>)</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="co">#Gets the lag values</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>pjm_data[<span class="st">'day_load_lag1'</span>] <span class="op">=</span> pjm_data[<span class="st">'day_load'</span>].shift(<span class="dv">1</span>)</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>pjm_data[<span class="st">'day_load_lag2'</span>] <span class="op">=</span> pjm_data[<span class="st">'day_load'</span>].shift(<span class="dv">2</span>)</span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="co">#Gets the temperature based values</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>pjm_data[<span class="st">'degree'</span>] <span class="op">=</span> pjm_data[<span class="st">'TAVG (Degrees Fahrenheit)'</span>]</span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>pjm_data[<span class="st">'degree_cdd'</span>] <span class="op">=</span> np.where(pjm_data[<span class="st">'TAVG (Degrees Fahrenheit)'</span>] <span class="op">-</span> <span class="dv">70</span> <span class="op">&gt;</span> <span class="dv">0</span>, pjm_data[<span class="st">'TAVG (Degrees Fahrenheit)'</span>] <span class="op">-</span> <span class="dv">70</span>, <span class="dv">0</span>)</span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>pjm_data[<span class="st">'degree_hdd'</span>] <span class="op">=</span> np.where(<span class="dv">60</span> <span class="op">-</span> pjm_data[<span class="st">'TAVG (Degrees Fahrenheit)'</span>] <span class="op">&gt;</span> <span class="dv">0</span>, <span class="dv">60</span> <span class="op">-</span> pjm_data[<span class="st">'TAVG (Degrees Fahrenheit)'</span>], <span class="dv">0</span>)</span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a><span class="co">#Get the weekend dates</span></span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>pjm_data[<span class="st">'weekday'</span>] <span class="op">=</span> pjm_data[<span class="st">'date'</span>].dt.dayofweek</span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a>pjm_data[<span class="st">'weekend'</span>] <span class="op">=</span> np.where(pjm_data[<span class="st">'weekday'</span>].isin([<span class="dv">5</span>,<span class="dv">6</span>]), <span class="va">True</span>, <span class="va">False</span>)</span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a><span class="co">#Drop unneeded fields</span></span>
+<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a>pjm_data <span class="op">=</span> pjm_data.drop(columns<span class="op">=</span>[<span class="st">'TAVG (Degrees Fahrenheit)'</span>, <span class="st">'month'</span>, <span class="st">'weekday'</span>])</span>
+<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a><span class="co">#Gets test and train</span></span>
+<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a>pjm_data_test <span class="op">=</span> pjm_data.groupby(<span class="st">'season'</span>).tail(<span class="dv">7</span>)</span>
+<span id="cb8-23"><a href="#cb8-23" aria-hidden="true" tabindex="-1"></a>pjm_data_train <span class="op">=</span> pjm_data.drop(pjm_data.groupby(<span class="st">'season'</span>).tail(<span class="dv">7</span>).index)</span>
+<span id="cb8-24"><a href="#cb8-24" aria-hidden="true" tabindex="-1"></a>pjm_data_train <span class="op">=</span> pjm_data_train[pjm_data_train[<span class="st">'day_load_lag2'</span>].notna()]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Load_forecast_model_comp_files/figure-html/cell-5-output-1.png" width="590" height="431" class="figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Load_forecast_model_comp_files/figure-html/cell-5-output-2.png" width="590" height="431" class="figure-img"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>When looking at the model results, we see that the model does extremely well. Additionally when looking at the diagnostic plots it fits our assumptions for multiple linear regression as well as making sure it is not a random walk. When looking at the model results, we drop both cooling degree days and the second lag as they don’t help the explanation as much.</p>
+<div id="35c6a0a0" class="cell" data-execution_count="5">
+<div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co">#TS Model</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>test_x <span class="op">=</span> pjm_data_test.drop(columns<span class="op">=</span>[<span class="st">'date'</span>,<span class="st">'day_load'</span>,<span class="st">'season'</span>])</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>test_y <span class="op">=</span> pjm_data_test[<span class="st">'day_load'</span>]</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>x <span class="op">=</span> pjm_data_train.drop(columns<span class="op">=</span>[<span class="st">'date'</span>,<span class="st">'day_load'</span>,<span class="st">'season'</span>])</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>y <span class="op">=</span> pjm_data_train[<span class="st">'day_load'</span>]</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="co">#Creates the model and fits it</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> LinearRegression()</span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>model.fit(x, y)</span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a><span class="co">#Gets </span></span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>load_hat_ts <span class="op">=</span> model.predict(x)</span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>residuals_ts <span class="op">=</span> pjm_data_train[<span class="st">'day_load'</span>] <span class="op">-</span> load_hat_ts</span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a><span class="co">#Looks at diagnostic plots</span></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>residuals_ts_std <span class="op">=</span> (residuals_ts <span class="op">-</span> residuals_ts.mean())<span class="op">/</span>statistics.stdev(residuals_ts)</span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>sm.qqplot(residuals_ts_std)</span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>shapiro(residuals_ts)</span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>sb.lineplot(x<span class="op">=</span>pjm_data[<span class="st">"date"</span>], y<span class="op">=</span>residuals_ts_std)</span>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a>sb.lineplot(x<span class="op">=</span>load_hat_ts, y<span class="op">=</span>residuals_ts_std)</span>
+<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-24"><a href="#cb9-24" aria-hidden="true" tabindex="-1"></a><span class="co">#Look at model summary</span></span>
+<span id="cb9-25"><a href="#cb9-25" aria-hidden="true" tabindex="-1"></a>x2 <span class="op">=</span> sm.add_constant(x)</span>
+<span id="cb9-26"><a href="#cb9-26" aria-hidden="true" tabindex="-1"></a>est <span class="op">=</span> sm.OLS(y, x2.astype(<span class="bu">float</span>))</span>
+<span id="cb9-27"><a href="#cb9-27" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(est.fit().summary())</span>
+<span id="cb9-28"><a href="#cb9-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-29"><a href="#cb9-29" aria-hidden="true" tabindex="-1"></a><span class="co">#Look at model summary dropping lag</span></span>
+<span id="cb9-30"><a href="#cb9-30" aria-hidden="true" tabindex="-1"></a>x2 <span class="op">=</span> x2.drop(columns<span class="op">=</span>[<span class="st">'day_load_lag2'</span>])</span>
+<span id="cb9-31"><a href="#cb9-31" aria-hidden="true" tabindex="-1"></a>est <span class="op">=</span> sm.OLS(y, x2.astype(<span class="bu">float</span>))</span>
+<span id="cb9-32"><a href="#cb9-32" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(est.fit().summary())</span>
+<span id="cb9-33"><a href="#cb9-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-34"><a href="#cb9-34" aria-hidden="true" tabindex="-1"></a><span class="co">#Look at model summary cooling degree day</span></span>
+<span id="cb9-35"><a href="#cb9-35" aria-hidden="true" tabindex="-1"></a>x2 <span class="op">=</span> x2.drop(columns<span class="op">=</span>[<span class="st">'degree_cdd'</span>])</span>
+<span id="cb9-36"><a href="#cb9-36" aria-hidden="true" tabindex="-1"></a>est <span class="op">=</span> sm.OLS(y, x2.astype(<span class="bu">float</span>))</span>
+<span id="cb9-37"><a href="#cb9-37" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(est.fit().summary())</span>
+<span id="cb9-38"><a href="#cb9-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-39"><a href="#cb9-39" aria-hidden="true" tabindex="-1"></a><span class="co">#Make test MSE</span></span>
+<span id="cb9-40"><a href="#cb9-40" aria-hidden="true" tabindex="-1"></a>ts_mse <span class="op">=</span> np.square(y  <span class="op">-</span> est.fit().predict(x2)).mean() </span>
+<span id="cb9-41"><a href="#cb9-41" aria-hidden="true" tabindex="-1"></a>test_x2 <span class="op">=</span> sm.add_constant(test_x.drop(columns<span class="op">=</span>[<span class="st">'degree_cdd'</span>,<span class="st">'day_load_lag2'</span>]))</span>
+<span id="cb9-42"><a href="#cb9-42" aria-hidden="true" tabindex="-1"></a>ts_mse_test <span class="op">=</span> np.square(test_y  <span class="op">-</span> est.fit().predict(test_x2)).mean() </span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Load_forecast_model_comp_files/figure-html/cell-6-output-1.png" width="587" height="429" class="figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Load_forecast_model_comp_files/figure-html/cell-6-output-2.png" width="587" height="428" class="figure-img"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>                            OLS Regression Results                            
+==============================================================================
+Dep. Variable:               day_load   R-squared:                       0.917
+Model:                            OLS   Adj. R-squared:                  0.916
+Method:                 Least Squares   F-statistic:                     601.7
+Date:                Sun, 02 Jun 2024   Prob (F-statistic):          5.17e-173
+Time:                        18:35:59   Log-Likelihood:                -4211.9
+No. Observations:                 333   AIC:                             8438.
+Df Residuals:                     326   BIC:                             8465.
+Df Model:                           6                                         
+Covariance Type:            nonrobust                                         
+=================================================================================
+                    coef    std err          t      P&gt;|t|      [0.025      0.975]
+---------------------------------------------------------------------------------
+const         -2.702e+05   1.02e+05     -2.648      0.008   -4.71e+05   -6.94e+04
+day_load_lag1     0.5595      0.045     12.401      0.000       0.471       0.648
+day_load_lag2     0.0142      0.039      0.362      0.718      -0.063       0.091
+degree         1.741e+04   1697.919     10.252      0.000    1.41e+04    2.07e+04
+degree_cdd     7712.2874   3417.358      2.257      0.025     989.430    1.44e+04
+degree_hdd     2.713e+04   2167.954     12.515      0.000    2.29e+04    3.14e+04
+weekend       -1.413e+05   1.06e+04    -13.365      0.000   -1.62e+05   -1.21e+05
+==============================================================================
+Omnibus:                       19.197   Durbin-Watson:                   1.374
+Prob(Omnibus):                  0.000   Jarque-Bera (JB):               50.581
+Skew:                           0.165   Prob(JB):                     1.04e-11
+Kurtosis:                       4.881   Cond. No.                     7.48e+07
+==============================================================================
+
+Notes:
+[1] Standard Errors assume that the covariance matrix of the errors is correctly specified.
+[2] The condition number is large, 7.48e+07. This might indicate that there are
+strong multicollinearity or other numerical problems.
+                            OLS Regression Results                            
+==============================================================================
+Dep. Variable:               day_load   R-squared:                       0.917
+Model:                            OLS   Adj. R-squared:                  0.916
+Method:                 Least Squares   F-statistic:                     723.9
+Date:                Sun, 02 Jun 2024   Prob (F-statistic):          1.95e-174
+Time:                        18:35:59   Log-Likelihood:                -4212.0
+No. Observations:                 333   AIC:                             8436.
+Df Residuals:                     327   BIC:                             8459.
+Df Model:                           5                                         
+Covariance Type:            nonrobust                                         
+=================================================================================
+                    coef    std err          t      P&gt;|t|      [0.025      0.975]
+---------------------------------------------------------------------------------
+const         -2.677e+05   1.02e+05     -2.633      0.009   -4.68e+05   -6.77e+04
+day_load_lag1     0.5736      0.022     25.550      0.000       0.529       0.618
+degree         1.737e+04   1692.445     10.263      0.000     1.4e+04    2.07e+04
+degree_cdd     7612.9902   3401.801      2.238      0.026     920.815    1.43e+04
+degree_hdd     2.706e+04   2154.985     12.555      0.000    2.28e+04    3.13e+04
+weekend       -1.396e+05   9363.884    -14.904      0.000   -1.58e+05   -1.21e+05
+==============================================================================
+Omnibus:                       19.069   Durbin-Watson:                   1.387
+Prob(Omnibus):                  0.000   Jarque-Bera (JB):               49.689
+Skew:                           0.168   Prob(JB):                     1.62e-11
+Kurtosis:                       4.862   Cond. No.                     5.28e+07
+==============================================================================
+
+Notes:
+[1] Standard Errors assume that the covariance matrix of the errors is correctly specified.
+[2] The condition number is large, 5.28e+07. This might indicate that there are
+strong multicollinearity or other numerical problems.
+                            OLS Regression Results                            
+==============================================================================
+Dep. Variable:               day_load   R-squared:                       0.916
+Model:                            OLS   Adj. R-squared:                  0.915
+Method:                 Least Squares   F-statistic:                     892.8
+Date:                Sun, 02 Jun 2024   Prob (F-statistic):          7.34e-175
+Time:                        18:35:59   Log-Likelihood:                -4214.5
+No. Observations:                 333   AIC:                             8439.
+Df Residuals:                     328   BIC:                             8458.
+Df Model:                           4                                         
+Covariance Type:            nonrobust                                         
+=================================================================================
+                    coef    std err          t      P&gt;|t|      [0.025      0.975]
+---------------------------------------------------------------------------------
+const         -4.565e+05   5.71e+04     -7.989      0.000   -5.69e+05   -3.44e+05
+day_load_lag1     0.5787      0.022     25.751      0.000       0.534       0.623
+degree          2.02e+04   1132.910     17.828      0.000     1.8e+04    2.24e+04
+degree_hdd     3.022e+04   1637.917     18.448      0.000     2.7e+04    3.34e+04
+weekend       -1.387e+05   9413.802    -14.738      0.000   -1.57e+05    -1.2e+05
+==============================================================================
+Omnibus:                       14.482   Durbin-Watson:                   1.385
+Prob(Omnibus):                  0.001   Jarque-Bera (JB):               31.802
+Skew:                           0.132   Prob(JB):                     1.24e-07
+Kurtosis:                       4.491   Cond. No.                     2.95e+07
+==============================================================================
+
+Notes:
+[1] Standard Errors assume that the covariance matrix of the errors is correctly specified.
+[2] The condition number is large, 2.95e+07. This might indicate that there are
+strong multicollinearity or other numerical problems.</code></pre>
+</div>
+</div>
+</section>
+<section id="random-forest" class="level2">
+<h2 class="anchored" data-anchor-id="random-forest">Random Forest</h2>
+<p>The next model we consider is random forest. In this we use all the same base variabels from before and then consider a max depth of 15 splits and square root of the number of paramters to be considered at each split. When computing we use 200 trees in order to bag the results.</p>
+<div id="2011a623" class="cell" data-execution_count="6">
+<div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> RandomForestRegressor(n_estimators<span class="op">=</span><span class="dv">200</span>, max_depth<span class="op">=</span><span class="dv">15</span>, max_features<span class="op">=</span><span class="st">'sqrt'</span>)</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>model.fit(x, y)</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>load_hat_rf <span class="op">=</span> model.predict(x)</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>residuals_rf <span class="op">=</span> pjm_data_train[<span class="st">'day_load'</span>] <span class="op">-</span> load_hat_rf</span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>rf_mse <span class="op">=</span> np.square(residuals_rf).mean()</span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="co">#Gets the test MSE</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>residuals_rf_test <span class="op">=</span> pjm_data_test[<span class="st">'day_load'</span>] <span class="op">-</span> model.predict(test_x)</span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>rf_mse_test <span class="op">=</span> np.square(residuals_rf_test).mean()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="neural-network" class="level2">
+<h2 class="anchored" data-anchor-id="neural-network">Neural Network</h2>
+<p>Lastly we consider a neural network. In this we use all the same base variabels from before and then consider a neural network with sequential model with 2 hidden layers each being 3 dense. When computing we use 10 epochs in order to come up with the results.</p>
+<div id="3a8db5c4" class="cell" data-execution_count="7">
+<div class="sourceCode cell-code" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Neural network</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="co"># Define Sequential model with 2 hidden layers each being 3 dense.</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>scaler <span class="op">=</span>  StandardScaler()</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>x3 <span class="op">=</span> x2.drop(columns <span class="op">=</span> [<span class="st">'const'</span>])</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>x3 <span class="op">=</span> scaler.fit_transform(x)</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>x3 <span class="op">=</span> np.array(x3)</span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>y2 <span class="op">=</span> np.array([y]).transpose()</span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> keras.Sequential()</span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>model.add(keras.layers.Dense(<span class="dv">3</span>, activation <span class="op">=</span> <span class="st">'relu'</span>, input_dim<span class="op">=</span><span class="dv">6</span>))</span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>model.add(keras.layers.Dense(<span class="dv">3</span>, activation <span class="op">=</span> <span class="st">'relu'</span>))</span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a>model.add(keras.layers.Dense(<span class="dv">1</span>))</span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>model.<span class="bu">compile</span>(loss<span class="op">=</span><span class="st">"mean_squared_error"</span>, optimizer<span class="op">=</span><span class="st">"sgd"</span>)</span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a><span class="co"># This builds the model for the first time:</span></span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a>model.fit(x3, y2, epochs<span class="op">=</span><span class="dv">10</span>)</span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a>load_hat_nn <span class="op">=</span> model.predict(x3)</span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a>residuals_nn <span class="op">=</span> y2 <span class="op">-</span> load_hat_nn</span>
+<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a>nn_mse <span class="op">=</span> np.square(residuals_rf).mean()</span>
+<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-20"><a href="#cb12-20" aria-hidden="true" tabindex="-1"></a><span class="co">#Test MSE</span></span>
+<span id="cb12-21"><a href="#cb12-21" aria-hidden="true" tabindex="-1"></a>residuals_nn_test <span class="op">=</span> np.array([pjm_data_test[<span class="st">'day_load'</span>]]).transpose() <span class="op">-</span> model.predict(test_x)</span>
+<span id="cb12-22"><a href="#cb12-22" aria-hidden="true" tabindex="-1"></a>nn_mse_test <span class="op">=</span> np.square(residuals_rf_test).mean()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>C:\Users\jkdav\AppData\Roaming\Python\Python312\site-packages\keras\src\layers\core\dense.py:87: UserWarning: Do not pass an `input_shape`/`input_dim` argument to a layer. When using Sequential models, prefer using an `Input(shape)` object as the first layer in the model instead.
+  super().__init__(activity_regularizer=activity_regularizer, **kwargs)</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Epoch 1/10
+ 1/11 ━━━━━━━━━━━━━━━━━━━━ 26s 3s/step - loss: 4365572636672.0000 4/11 ━━━━━━━━━━━━━━━━━━━━ 0s 17ms/step - loss: 1257294623727776377602048.000011/11 ━━━━━━━━━━━━━━━━━━━━ 3s 9ms/step - loss: 821106083894977988919296.0000  
+Epoch 2/10
+ 1/11 ━━━━━━━━━━━━━━━━━━━━ 2s 224ms/step - loss: 944465218242097446912.0000 9/11 ━━━━━━━━━━━━━━━━━━━━ 0s 7ms/step - loss: 874071000579041132544.0000  11/11 ━━━━━━━━━━━━━━━━━━━━ 0s 9ms/step - loss: 852686994754611707904.0000
+Epoch 3/10
+ 1/11 ━━━━━━━━━━━━━━━━━━━━ 1s 166ms/step - loss: 605563716782933409792.000011/11 ━━━━━━━━━━━━━━━━━━━━ 0s 3ms/step - loss: 546717467436268912640.0000  
+Epoch 4/10
+ 1/11 ━━━━━━━━━━━━━━━━━━━━ 0s 88ms/step - loss: 388267779143329906688.000011/11 ━━━━━━━━━━━━━━━━━━━━ 0s 3ms/step - loss: 350539576952475353088.0000 
+Epoch 5/10
+ 1/11 ━━━━━━━━━━━━━━━━━━━━ 0s 69ms/step - loss: 248947165452019171328.000011/11 ━━━━━━━━━━━━━━━━━━━━ 0s 2ms/step - loss: 224755693025505574912.0000 
+Epoch 6/10
+ 1/11 ━━━━━━━━━━━━━━━━━━━━ 0s 66ms/step - loss: 159617879815032406016.000011/11 ━━━━━━━━━━━━━━━━━━━━ 0s 2ms/step - loss: 144107095670275440640.0000 
+Epoch 7/10
+ 1/11 ━━━━━━━━━━━━━━━━━━━━ 0s 82ms/step - loss: 102344204774971277312.000011/11 ━━━━━━━━━━━━━━━━━━━━ 0s 2ms/step - loss: 92397398067505004544.0000  
+Epoch 8/10
+ 1/11 ━━━━━━━━━━━━━━━━━━━━ 0s 67ms/step - loss: 65617807210602037248.000011/11 ━━━━━━━━━━━━━━━━━━━━ 0s 2ms/step - loss: 59242130707268501504.0000 
+Epoch 9/10
+ 1/11 ━━━━━━━━━━━━━━━━━━━━ 0s 97ms/step - loss: 42072284671267307520.000011/11 ━━━━━━━━━━━━━━━━━━━━ 0s 3ms/step - loss: 37984362011847294976.0000 
+Epoch 10/10
+ 1/11 ━━━━━━━━━━━━━━━━━━━━ 0s 83ms/step - loss: 26976150550600482816.000011/11 ━━━━━━━━━━━━━━━━━━━━ 0s 4ms/step - loss: 24354510209703477248.0000 
+ 1/11 ━━━━━━━━━━━━━━━━━━━━ 1s 128ms/step11/11 ━━━━━━━━━━━━━━━━━━━━ 0s 9ms/step  11/11 ━━━━━━━━━━━━━━━━━━━━ 0s 9ms/step
+1/1 ━━━━━━━━━━━━━━━━━━━━ 0s 45ms/step1/1 ━━━━━━━━━━━━━━━━━━━━ 0s 46ms/step</code></pre>
+</div>
+</div>
+</section>
+<section id="results-based-on-mse-for-the-train-and-test-data" class="level2">
+<h2 class="anchored" data-anchor-id="results-based-on-mse-for-the-train-and-test-data">Results based on MSE for the train and test data</h2>
+<p>Here we look at the results for models. As we can see the lowest train MSE is tied for the random forest and neural network while the time series is last; However, the time series performs best with the test set when compared to the other models. Because of this we can assume that the we overfit with the neural network and the random forest.</p>
+<div id="abb56d3d" class="cell" data-execution_count="8">
+<div class="sourceCode cell-code" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>d <span class="op">=</span> {<span class="st">'Model Type'</span>: [<span class="st">'Time Series Model'</span>, <span class="st">'Random Forest'</span>, <span class="st">'Neural Network'</span>],<span class="st">'Train MSE'</span>: [ts_mse, rf_mse, nn_mse], <span class="st">'Test MSE'</span>: [ts_mse_test, rf_mse_test, nn_mse_test]}</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>df <span class="op">=</span> pd.DataFrame(data<span class="op">=</span>d)</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(df)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>          Model Type     Train MSE      Test MSE
+0  Time Series Model  5.762981e+09  3.743318e+09
+1      Random Forest  1.101380e+09  5.120390e+09
+2     Neural Network  1.101380e+09  5.120390e+09</code></pre>
+</div>
+</div>
+</section>
+<section id="next-steps" class="level2">
+<h2 class="anchored" data-anchor-id="next-steps">Next Steps</h2>
+<p>So this is just an intro and the plan is to keep the project going. For next steps, I will be optimizing the hyperparameters for random forest and neural network. After that is to extend the forecating of load and compare it to the PJM’s predictions.</p>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const isCodeAnnotation = (el) => {
+    for (const clz of el.classList) {
+      if (clz.startsWith('code-annotation-')) {                     
+        return true;
+      }
+    }
+    return false;
+  }
+  const clipboard = new window.ClipboardJS('.code-copy-button', {
+    text: function(trigger) {
+      const codeEl = trigger.previousElementSibling.cloneNode(true);
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+  });
+  clipboard.on('success', function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  });
+    var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+    var mailtoRegex = new RegExp(/^mailto:/);
+      var filterRegex = new RegExp('/' + window.location.host + '/');
+    var isInternal = (href) => {
+        return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+    }
+    // Inspect non-navigation links and adorn them if external
+ 	var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool)');
+    for (var i=0; i<links.length; i++) {
+      const link = links[i];
+      if (!isInternal(link.href)) {
+        // undo the damage that might have been done by quarto-nav.js in the case of
+        // links that we want to consider external
+        if (link.dataset.originalHref !== undefined) {
+          link.href = link.dataset.originalHref;
+        }
+      }
+    }
+  function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+    const config = {
+      allowHTML: true,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start',
+    };
+    if (contentFn) {
+      config.content = contentFn;
+    }
+    if (onTriggerFn) {
+      config.onTrigger = onTriggerFn;
+    }
+    if (onUntriggerFn) {
+      config.onUntrigger = onUntriggerFn;
+    }
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      if (note) {
+        return note.innerHTML;
+      } else {
+        return "";
+      }
+    });
+  }
+  const xrefs = window.document.querySelectorAll('a.quarto-xref');
+  const processXRef = (id, note) => {
+    // Strip column container classes
+    const stripColumnClz = (el) => {
+      el.classList.remove("page-full", "page-columns");
+      if (el.children) {
+        for (const child of el.children) {
+          stripColumnClz(child);
+        }
+      }
+    }
+    stripColumnClz(note)
+    if (id === null || id.startsWith('sec-')) {
+      // Special case sections, only their first couple elements
+      const container = document.createElement("div");
+      if (note.children && note.children.length > 2) {
+        container.appendChild(note.children[0].cloneNode(true));
+        for (let i = 1; i < note.children.length; i++) {
+          const child = note.children[i];
+          if (child.tagName === "P" && child.innerText === "") {
+            continue;
+          } else {
+            container.appendChild(child.cloneNode(true));
+            break;
+          }
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(container);
+        }
+        return container.innerHTML
+      } else {
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        return note.innerHTML;
+      }
+    } else {
+      // Remove any anchor links if they are present
+      const anchorLink = note.querySelector('a.anchorjs-link');
+      if (anchorLink) {
+        anchorLink.remove();
+      }
+      if (window.Quarto?.typesetMath) {
+        window.Quarto.typesetMath(note);
+      }
+      // TODO in 1.5, we should make sure this works without a callout special case
+      if (note.classList.contains("callout")) {
+        return note.outerHTML;
+      } else {
+        return note.innerHTML;
+      }
+    }
+  }
+  for (var i=0; i<xrefs.length; i++) {
+    const xref = xrefs[i];
+    tippyHover(xref, undefined, function(instance) {
+      instance.disable();
+      let url = xref.getAttribute('href');
+      let hash = undefined; 
+      if (url.startsWith('#')) {
+        hash = url;
+      } else {
+        try { hash = new URL(url).hash; } catch {}
+      }
+      if (hash) {
+        const id = hash.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note !== null) {
+          try {
+            const html = processXRef(id, note.cloneNode(true));
+            instance.setContent(html);
+          } finally {
+            instance.enable();
+            instance.show();
+          }
+        } else {
+          // See if we can fetch this
+          fetch(url.split('#')[0])
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.getElementById(id);
+            if (note !== null) {
+              const html = processXRef(id, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      } else {
+        // See if we can fetch a full url (with no hash to target)
+        // This is a special case and we should probably do some content thinning / targeting
+        fetch(url)
+        .then(res => res.text())
+        .then(html => {
+          const parser = new DOMParser();
+          const htmlDoc = parser.parseFromString(html, "text/html");
+          const note = htmlDoc.querySelector('main.content');
+          if (note !== null) {
+            // This should only happen for chapter cross references
+            // (since there is no id in the URL)
+            // remove the first header
+            if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+              note.children[0].remove();
+            }
+            const html = processXRef(null, note);
+            instance.setContent(html);
+          } 
+        }).finally(() => {
+          instance.enable();
+          instance.show();
+        });
+      }
+    }, function(instance) {
+    });
+  }
+      let selectedAnnoteEl;
+      const selectorForAnnotation = ( cell, annotation) => {
+        let cellAttr = 'data-code-cell="' + cell + '"';
+        let lineAttr = 'data-code-annotation="' +  annotation + '"';
+        const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+        return selector;
+      }
+      const selectCodeLines = (annoteEl) => {
+        const doc = window.document;
+        const targetCell = annoteEl.getAttribute("data-target-cell");
+        const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+        const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+        const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+        const lineIds = lines.map((line) => {
+          return targetCell + "-" + line;
+        })
+        let top = null;
+        let height = null;
+        let parent = null;
+        if (lineIds.length > 0) {
+            //compute the position of the single el (top and bottom and make a div)
+            const el = window.document.getElementById(lineIds[0]);
+            top = el.offsetTop;
+            height = el.offsetHeight;
+            parent = el.parentElement.parentElement;
+          if (lineIds.length > 1) {
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+            height = bottom - top;
+          }
+          if (top !== null && height !== null && parent !== null) {
+            // cook up a div (if necessary) and position it 
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
+            }
+            div.style.top = top - 2 + "px";
+            div.style.height = height + 4 + "px";
+            div.style.left = 0;
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
+            }
+            gutterDiv.style.top = top - 2 + "px";
+            gutterDiv.style.height = height + 4 + "px";
+          }
+          selectedAnnoteEl = annoteEl;
+        }
+      };
+      const unselectCodeLines = () => {
+        const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+        elementsIds.forEach((elId) => {
+          const div = window.document.getElementById(elId);
+          if (div) {
+            div.remove();
+          }
+        });
+        selectedAnnoteEl = undefined;
+      };
+        // Handle positioning of the toggle
+    window.addEventListener(
+      "resize",
+      throttle(() => {
+        elRect = undefined;
+        if (selectedAnnoteEl) {
+          selectCodeLines(selectedAnnoteEl);
+        }
+      }, 10)
+    );
+    function throttle(fn, ms) {
+    let throttle = false;
+    let timer;
+      return (...args) => {
+        if(!throttle) { // first call gets through
+            fn.apply(this, args);
+            throttle = true;
+        } else { // all the others get throttled
+            if(timer) clearTimeout(timer); // cancel #2
+            timer = setTimeout(() => {
+              fn.apply(this, args);
+              timer = throttle = false;
+            }, ms);
+        }
+      };
+    }
+      // Attach click handler to the DT
+      const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+      for (const annoteDlNode of annoteDls) {
+        annoteDlNode.addEventListener('click', (event) => {
+          const clickedEl = event.target;
+          if (clickedEl !== selectedAnnoteEl) {
+            unselectCodeLines();
+            const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+            if (activeEl) {
+              activeEl.classList.remove('code-annotation-active');
+            }
+            selectCodeLines(clickedEl);
+            clickedEl.classList.add('code-annotation-active');
+          } else {
+            // Unselect the line
+            unselectCodeLines();
+            clickedEl.classList.remove('code-annotation-active');
+          }
+        });
+      }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

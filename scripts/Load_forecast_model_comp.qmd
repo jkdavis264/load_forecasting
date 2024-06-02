@@ -1,0 +1,235 @@
+---
+title: "Load Forecast"
+format: html
+---
+
+## Introduction
+
+Hello world, this is just a simple comparison between the predictive methods for forecasting PJM load for the next day. In this we use the load data from PJM's data finder as well as the weather forecast from John Glenn international airport via NOAA. Below are links to the data as well as the pulled data is in the git repo.
+
+[PJM Data](https://dataminer2.pjm.com/feed/inst_load)
+
+[NOAA](https://data.noaa.gov/onestop/collections/details666b9db2-e598-4d5a-9240-c4c10fc3c7a6)
+
+
+```{python}
+# loads the packages to be used
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+import keras
+import random
+from sklearn.linear_model import LinearRegression
+from  sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestRegressor
+import statsmodels.api as sm
+from scipy.stats import shapiro 
+import statistics
+import os
+from datetime import datetime
+import seaborn as sb
+from matplotlib import pyplot as plt
+from statsmodels.graphics.tsaplots import plot_pacf, plot_acf
+```
+
+```{python}
+#Changes directory to the project directory and loads the data
+os.chdir("C:\Projects\pjm_load_forecast")
+cwd = os.getcwd()
+
+#Filters weather to past year and sets to date to datetime
+weather_data = pd.read_csv("data\johnglenn_weather.csv")
+weather_data = weather_data[weather_data["Date"] >= "2023-05-01"]
+weather_data['Date'] = pd.to_datetime(weather_data['Date'], format = "%Y-%m-%d")
+
+#Filters the data to just PJM RTO and then gets daily values from hourly load
+pjm_rto_load = pd.read_csv("data\hrl_load_prelim.csv")
+pjm_rto_load['datetime_beginning_ept'] = pd.to_datetime(pjm_rto_load['datetime_beginning_ept'])
+
+# Makes the datetime a date and hourly load numeric
+pjm_rto_load['date'] = pjm_rto_load['datetime_beginning_ept'].dt.date
+pjm_rto_load['date'] = pd.to_datetime(pjm_rto_load['date'])
+pjm_rto_load['load_hourly'] = pd.to_numeric(pjm_rto_load['prelim_load_avg_hourly'])
+
+#Gets the sum for load in a day across all regions and hours in the day
+pjm_rto_load_day = pjm_rto_load[['date', 'load_hourly']].groupby('date').agg(day_load = ('load_hourly','sum')).reset_index()
+
+#Joins datasets together
+pjm_data = pjm_rto_load_day.merge(weather_data, left_on='date', right_on='Date')[['date', 'day_load', 'TAVG (Degrees Fahrenheit)']]
+
+#Gets a season variable
+pjm_data['month'] = pd.DatetimeIndex(pjm_data['date']).month
+pjm_data['season'] = np.where(pjm_data['month'].isin([12,1,2]), "Winter", np.where(pjm_data['month'].isin([3,4,5]), "Spring", np.where(pjm_data['month'].isin([6,7,8]), "Summer","Fall")))
+
+#Deletes the past data sets
+del pjm_rto_load_day
+del weather_data
+```
+
+## EDA
+
+In the EDA we can see that there were no missing data. When looking at the desnisties of temperature and load we can see they are multi modal suggesting multiple populations. However when looking at the months we can see this is season driven. Furthermore when looking at the data we can see that temperature and load have a clear relationship between the two.
+
+```{python}
+missing_vals = pjm_data['TAVG (Degrees Fahrenheit)'].isna().sum()
+print("Number of NAs in Degrees of weather :", missing_vals)
+sb.kdeplot(pjm_data['TAVG (Degrees Fahrenheit)'])
+plt.show()
+sb.kdeplot(data = pjm_data, x = 'TAVG (Degrees Fahrenheit)', hue="season")
+plt.show()
+sb.lineplot(data=pjm_data, x="date", y='TAVG (Degrees Fahrenheit)')
+
+missing_vals = pjm_data['day_load'].isna().sum()
+print("Number of NAs in Day Load :", missing_vals)
+sb.kdeplot(pjm_data['day_load'])
+plt.show()
+sb.kdeplot(data = pjm_data, x = 'day_load', hue="season")
+plt.show()
+sb.lineplot(data=pjm_data, x="date", y='day_load')
+plt.show()
+sb.pairplot(pjm_data.drop(columns = ['month']), diag_kind='kde')
+plt.show()
+```
+
+## Time Series
+
+For the first model we look at making an model based on time. First we have to look time element with ACF and PACF to see what ARMIA elements we have. Because we are only using one year, we won't be doing any seasonilty or monthly differenceing. 
+
+When looking at at the ACF and PACF we see that the PACF has the first two lags have a strong relationship, while the ACF has a gradual decline. With this we will consider the first two lags or AR(2) variables.
+
+Additionally we create new variables heating degree days and cooling degree days. These variables are ways to help determine the when a day would be used for heating or cooling based upon the temperature. As well as getting weekend dates as load will changes then typical work week days.
+
+Lastly we create the test set, in which as we are trying to forecast the next day, we use the last 7 days of each season to create the test set.
+
+```{python}
+#Look at autocorrelations
+plot_acf(pjm_data['day_load'], lags=50)
+plot_pacf(pjm_data['day_load'], lags=50)
+
+#Gets the lag values
+pjm_data['day_load_lag1'] = pjm_data['day_load'].shift(1)
+pjm_data['day_load_lag2'] = pjm_data['day_load'].shift(2)
+
+#Gets the temperature based values
+pjm_data['degree'] = pjm_data['TAVG (Degrees Fahrenheit)']
+pjm_data['degree_cdd'] = np.where(pjm_data['TAVG (Degrees Fahrenheit)'] - 70 > 0, pjm_data['TAVG (Degrees Fahrenheit)'] - 70, 0)
+pjm_data['degree_hdd'] = np.where(60 - pjm_data['TAVG (Degrees Fahrenheit)'] > 0, 60 - pjm_data['TAVG (Degrees Fahrenheit)'], 0)
+
+#Get the weekend dates
+pjm_data['weekday'] = pjm_data['date'].dt.dayofweek
+pjm_data['weekend'] = np.where(pjm_data['weekday'].isin([5,6]), True, False)
+
+#Drop unneeded fields
+pjm_data = pjm_data.drop(columns=['TAVG (Degrees Fahrenheit)', 'month', 'weekday'])
+
+#Gets test and train
+pjm_data_test = pjm_data.groupby('season').tail(7)
+pjm_data_train = pjm_data.drop(pjm_data.groupby('season').tail(7).index)
+pjm_data_train = pjm_data_train[pjm_data_train['day_load_lag2'].notna()]
+```
+
+When looking at the model results, we see that the model does extremely well. Additionally when looking at the diagnostic plots it fits our assumptions for multiple linear regression as well as making sure it is not a random walk. When looking at the model results, we drop both cooling degree days and the second lag as they don't help the explanation as much.
+
+```{python}
+#TS Model
+test_x = pjm_data_test.drop(columns=['date','day_load','season'])
+test_y = pjm_data_test['day_load']
+x = pjm_data_train.drop(columns=['date','day_load','season'])
+y = pjm_data_train['day_load']
+
+#Creates the model and fits it
+model = LinearRegression()
+model.fit(x, y)
+
+#Gets 
+load_hat_ts = model.predict(x)
+residuals_ts = pjm_data_train['day_load'] - load_hat_ts
+
+#Looks at diagnostic plots
+residuals_ts_std = (residuals_ts - residuals_ts.mean())/statistics.stdev(residuals_ts)
+sm.qqplot(residuals_ts_std)
+shapiro(residuals_ts)
+sb.lineplot(x=pjm_data["date"], y=residuals_ts_std)
+plt.show()
+sb.lineplot(x=load_hat_ts, y=residuals_ts_std)
+plt.show()
+
+#Look at model summary
+x2 = sm.add_constant(x)
+est = sm.OLS(y, x2.astype(float))
+print(est.fit().summary())
+
+#Look at model summary dropping lag
+x2 = x2.drop(columns=['day_load_lag2'])
+est = sm.OLS(y, x2.astype(float))
+print(est.fit().summary())
+
+#Look at model summary cooling degree day
+x2 = x2.drop(columns=['degree_cdd'])
+est = sm.OLS(y, x2.astype(float))
+print(est.fit().summary())
+
+#Make test MSE
+ts_mse = np.square(y  - est.fit().predict(x2)).mean() 
+test_x2 = sm.add_constant(test_x.drop(columns=['degree_cdd','day_load_lag2']))
+ts_mse_test = np.square(test_y  - est.fit().predict(test_x2)).mean() 
+```
+
+## Random Forest
+
+The next model we consider is random forest. In this we use all the same base variabels from before and then consider a max depth of 15 splits and square root of the number of paramters to be considered at each split. When computing we use 200 trees in order to bag the results.
+
+```{python}
+model = RandomForestRegressor(n_estimators=200, max_depth=15, max_features='sqrt')
+model.fit(x, y)
+load_hat_rf = model.predict(x)
+residuals_rf = pjm_data_train['day_load'] - load_hat_rf
+rf_mse = np.square(residuals_rf).mean()
+
+#Gets the test MSE
+residuals_rf_test = pjm_data_test['day_load'] - model.predict(test_x)
+rf_mse_test = np.square(residuals_rf_test).mean()
+```
+
+## Neural Network
+
+Lastly we consider a neural network. In this we use all the same base variabels from before and then consider a neural network with sequential model with 2 hidden layers each being 3 dense. When computing we use 10 epochs in order to come up with the results.
+
+```{python}
+#Neural network
+# Define Sequential model with 2 hidden layers each being 3 dense.
+scaler =  StandardScaler()
+x3 = x2.drop(columns = ['const'])
+x3 = scaler.fit_transform(x)
+x3 = np.array(x3)
+y2 = np.array([y]).transpose()
+model = keras.Sequential()
+model.add(keras.layers.Dense(3, activation = 'relu', input_dim=6))
+model.add(keras.layers.Dense(3, activation = 'relu'))
+model.add(keras.layers.Dense(1))
+model.compile(loss="mean_squared_error", optimizer="sgd")
+
+# This builds the model for the first time:
+model.fit(x3, y2, epochs=10)
+load_hat_nn = model.predict(x3)
+residuals_nn = y2 - load_hat_nn
+nn_mse = np.square(residuals_rf).mean()
+
+#Test MSE
+residuals_nn_test = np.array([pjm_data_test['day_load']]).transpose() - model.predict(test_x)
+nn_mse_test = np.square(residuals_rf_test).mean()
+```
+
+## Results based on MSE for the train and test data
+
+Here we look at the results for models. As we can see the lowest train MSE is tied for the random forest and neural network while the time series is last; However, the time series performs best with the test set when compared to the other models. Because of this we can assume that the we overfit with the neural network and the random forest.
+
+```{python}
+d = {'Model Type': ['Time Series Model', 'Random Forest', 'Neural Network'],'Train MSE': [ts_mse, rf_mse, nn_mse], 'Test MSE': [ts_mse_test, rf_mse_test, nn_mse_test]}
+df = pd.DataFrame(data=d)
+print(df)
+```
+
+## Next Steps
+
+So this is just an intro and the plan is to keep the project going. For next steps, I will be optimizing the hyperparameters for random forest and neural network. After that is to extend the forecating of load and compare it to the PJM's predictions.
